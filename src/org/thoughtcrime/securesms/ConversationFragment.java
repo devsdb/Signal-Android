@@ -18,6 +18,7 @@ package org.thoughtcrime.securesms;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.arch.lifecycle.Observer;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -39,6 +40,8 @@ import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.RecyclerView.OnScrollListener;
 import android.text.ClipboardManager;
 import android.text.TextUtils;
+
+import org.thoughtcrime.securesms.components.ConversationTypingView;
 import org.thoughtcrime.securesms.logging.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -77,6 +80,7 @@ import org.thoughtcrime.securesms.util.CommunicationActions;
 import org.thoughtcrime.securesms.util.SaveAttachmentTask;
 import org.thoughtcrime.securesms.util.SaveAttachmentTask.Attachment;
 import org.thoughtcrime.securesms.util.StickyHeaderDecoration;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.thoughtcrime.securesms.util.ViewUtil;
 import org.thoughtcrime.securesms.util.task.ProgressDialogAsyncTask;
 
@@ -116,6 +120,7 @@ public class ConversationFragment extends Fragment
   private RecyclerView.ItemDecoration lastSeenDecoration;
   private ViewSwitcher                topLoadMoreView;
   private ViewSwitcher                bottomLoadMoreView;
+  private ConversationTypingView      typingView;
   private UnknownSenderView           unknownSenderView;
   private View                        composeDivider;
   private View                        scrollToBottomButton;
@@ -146,6 +151,8 @@ public class ConversationFragment extends Fragment
     bottomLoadMoreView = (ViewSwitcher) inflater.inflate(R.layout.load_more_header, container, false);
     initializeLoadMoreView(topLoadMoreView);
     initializeLoadMoreView(bottomLoadMoreView);
+
+    typingView = (ConversationTypingView) inflater.inflate(R.layout.conversation_typing_view, container, false);
 
     return view;
   }
@@ -215,6 +222,7 @@ public class ConversationFragment extends Fragment
 
     OnScrollListener scrollListener = new ConversationScrollListener(getActivity());
     list.addOnScrollListener(scrollListener);
+    initializeTypingObserver();
   }
 
   private void initializeListAdapter() {
@@ -235,6 +243,32 @@ public class ConversationFragment extends Fragment
       getLoaderManager().restartLoader(0, args, ConversationFragment.this);
       loadMoreView.showNext();
       loadMoreView.setOnClickListener(null);
+    });
+  }
+
+  private void initializeTypingObserver() {
+    if (!TextSecurePreferences.isTypingIndicatorsEnabled(requireContext())) {
+      return;
+    }
+
+    ApplicationContext.getInstance(requireContext()).getTypingStatusRepository().getTypists(threadId).observe(this, recipients ->  {
+      if (recipients == null) {
+        recipients = Collections.emptyList();
+      }
+
+      typingView.setTypists(GlideApp.with(ConversationFragment.this), recipients, recipient.isGroupRecipient());
+
+      ConversationAdapter adapter = getListAdapter();
+
+      if (adapter.getHeaderView() == null || adapter.getHeaderView() == typingView) {
+        if (recipients.size() > 0) {
+          adapter.setHeaderView(typingView);
+          adapter.notifyDataSetChanged();
+        } else {
+          adapter.setHeaderView(null);
+          adapter.notifyDataSetChanged();
+        }
+      }
     });
   }
 
@@ -501,7 +535,7 @@ public class ConversationFragment extends Fragment
     if (!loader.hasSent() && !recipient.isSystemContact() && !recipient.isGroupRecipient() && recipient.getRegistered() == RecipientDatabase.RegisteredState.REGISTERED) {
       adapter.setHeaderView(unknownSenderView);
     } else {
-      adapter.setHeaderView(null);
+      clearHeaderIfNotTyping(adapter);
     }
 
     if (loader.hasOffset()) {
@@ -536,6 +570,12 @@ public class ConversationFragment extends Fragment
     }
   }
 
+  private void clearHeaderIfNotTyping(ConversationAdapter adapter) {
+    if (adapter.getHeaderView() != typingView) {
+      adapter.setHeaderView(null);
+    }
+  }
+
   @Override
   public void onLoaderReset(Loader<Cursor> arg0) {
     if (list.getAdapter() != null) {
@@ -547,7 +587,7 @@ public class ConversationFragment extends Fragment
     MessageRecord messageRecord = DatabaseFactory.getMmsDatabase(getContext()).readerFor(message, threadId).getCurrent();
 
     if (getListAdapter() != null) {
-      getListAdapter().setHeaderView(null);
+      clearHeaderIfNotTyping(getListAdapter());
       setLastSeen(0);
       getListAdapter().addFastRecord(messageRecord);
     }
@@ -559,7 +599,7 @@ public class ConversationFragment extends Fragment
     MessageRecord messageRecord = DatabaseFactory.getSmsDatabase(getContext()).readerFor(message, threadId).getCurrent();
 
     if (getListAdapter() != null) {
-      getListAdapter().setHeaderView(null);
+      clearHeaderIfNotTyping(getListAdapter());
       setLastSeen(0);
       getListAdapter().addFastRecord(messageRecord);
     }

@@ -1851,6 +1851,7 @@ public class ConversationActivity extends PassphraseRequiredActionBarActivity
 
     if (isSecureText && !forceSms) {
       outgoingMessage = new OutgoingSecureMediaMessage(outgoingMessageCandidate);
+      ApplicationContext.getInstance(context).getTypingStatusSender().onTypingStopped(threadId);
     } else {
       outgoingMessage = outgoingMessageCandidate;
     }
@@ -1898,6 +1899,7 @@ public class ConversationActivity extends PassphraseRequiredActionBarActivity
 
     if (isSecureText && !forceSms) {
       message = new OutgoingEncryptedMessage(recipient, messageBody, expiresIn);
+      ApplicationContext.getInstance(context).getTypingStatusSender().onTypingStopped(threadId);
     } else {
       message = new OutgoingTextMessage(recipient, messageBody, expiresIn, subscriptionId);
     }
@@ -2207,6 +2209,10 @@ public class ConversationActivity extends PassphraseRequiredActionBarActivity
 
       if (composeText.getTextTrimmed().length() == 0 || beforeLength == 0) {
         composeText.postDelayed(ConversationActivity.this::updateToggleButtonState, 50);
+      }
+
+      if (composeText.getTextTrimmed().length() > 0 && threadId > 0 && isSecureText && !isSmsForced()) {
+        ApplicationContext.getInstance(ConversationActivity.this).getTypingStatusSender().onTypingStarted(threadId);
       }
     }
 
